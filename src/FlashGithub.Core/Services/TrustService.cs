@@ -281,8 +281,40 @@ public sealed class TrustService
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
+            // macOS 26：管理员域的信任写入必须由可交互的 GUI 进程发起
+            // （后台 shell 会被拒绝 "no user interaction was possible"）。
+            // 应用本身以 root 运行时（GUI 进程），直接调用，系统会把确认框弹到用户屏幕。
+            if (PrivilegeService.IsElevated)
+            {
+                try
+                {
+                    using var p = Process.Start(new ProcessStartInfo("security",
+                        $"add-trusted-cert -d -r trustRoot \"{_pemPath}\"")
+                    {
+                        UseShellExecute = false,
+                        RedirectStandardError = true,
+                    })!;
+                    var err = await p.StandardError.ReadToEndAsync();
+                    await p.WaitForExitAsync();
+                    if (p.ExitCode == 0)
+                    {
+                        Log.Info("根证书已写入系统钥匙串（管理员信任）");
+                        return;
+                    }
+                    Log.Warn($"管理员信任写入失败：{err.Trim()}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"管理员信任写入失败：{ex.Message}");
+                }
+            }
+
             // 用户级：登录钥匙串，无需管理员密码
-            var userKeychain = $"{Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)}/Library/Keychains/login.keychain-db";
+            var userProfile = Environment.UserName == "root"
+                ? Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(
+                    Path.GetDirectoryName(_pemPath))))! // 从配置目录回推用户主目录
+                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var userKeychain = Path.Combine(userProfile, "Library", "Keychains", "login.keychain-db");
             if (await TryRunAsync("security", $"add-trusted-cert -r trustRoot -k \"{userKeychain}\" \"{_pemPath}\""))
             {
                 Log.Info("根证书已安装到登录钥匙串（用户级信任）");
