@@ -99,6 +99,7 @@ public partial class MainViewModel : ViewModelBase
         ReloadDomains();
         PrepareAsync();
         CheckResidueAsync();
+        CheckHelperOutdatedAsync();
     }
 
     private void ReloadDomains()
@@ -160,6 +161,17 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void IgnoreResidue() => HasHostsResidue = false;
+
+    /// <summary>加速结束后同步"后台服务需要更新"的提示状态。</summary>
+    private async void CheckHelperOutdatedAsync()
+    {
+        var outdated = await Task.Run(_engine.IsHelperOutdated);
+        if (outdated)
+        {
+            Log.Warn("后台服务版本落后于当前程序，点提示条更新后可获得自扫描等最新修复");
+            HasHelperMissing = true;
+        }
+    }
 
     [RelayCommand]
     private async Task InstallHelperAsync()

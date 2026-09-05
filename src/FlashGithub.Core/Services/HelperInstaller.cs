@@ -18,6 +18,29 @@ public static class HelperInstaller
     public static bool IsInstalled() =>
         OperatingSystem.IsMacOS() && File.Exists(PlistPath);
 
+    /// <summary>后台服务二进制与当前程序是否一致（不一致说明 daemon 落后于代码，需要更新）。</summary>
+    public static bool IsOutdated()
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (exePath is null || !OperatingSystem.IsMacOS()) return false;
+            var stagedExe = Path.Combine(HelperDir, Path.GetFileName(exePath));
+            if (!File.Exists(stagedExe)) return true;
+            return GetSha256(exePath) != GetSha256(stagedExe);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string GetSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+    }
+
     /// <summary>发布 → 提权安装 → 等待命令通道就绪。失败抛异常。</summary>
     public static async Task InstallAsync()
     {

@@ -42,8 +42,11 @@ public sealed class AccelerationEngine : IAsyncDisposable
     /// <summary>后台服务（macOS LaunchDaemon）是否已安装并就绪。</summary>
     public bool IsHelperReady() => HelperClient.Default.IsAvailable();
 
-    /// <summary>安装 macOS 后台服务（需要一次管理员授权），安装后加速不再需要 sudo。</summary>
+    /// <summary>安装/更新 macOS 后台服务（需要一次管理员授权），安装后加速不再需要 sudo。</summary>
     public Task InstallHelperAsync() => HelperInstaller.InstallAsync();
+
+    /// <summary>后台服务是否落后于当前代码。</summary>
+    public bool IsHelperOutdated() => HelperInstaller.IsOutdated();
 
     public DomainRegistry Registry => _registry;
     public TrustService Trust => _trust;
@@ -96,6 +99,22 @@ public sealed class AccelerationEngine : IAsyncDisposable
 
         if (OperatingSystem.IsMacOS() && HelperClient.Default.IsAvailable())
         {
+            // daemon 二进制落后于当前代码时同步更新：
+            // 已是管理员 → 静默自动重装；否则提示用户点一次"安装后台服务"
+            if (HelperInstaller.IsOutdated())
+            {
+                if (PrivilegeService.IsElevated)
+                {
+                    Log.Info("检测到后台服务版本较旧，自动更新…");
+                    await HelperInstaller.InstallAsync();
+                }
+                else
+                {
+                    Log.Warn("后台服务版本较旧（缺少自扫描/最新修复），请点击提示条中的「安装后台服务」更新");
+                    Log.Warn("本次加速仍将使用旧版后台服务");
+                }
+            }
+
             // 特权后台服务承载 80/443 监听，本进程无需 root
             _useHelper = true;
             Log.Info("通过后台服务启动监听…");
