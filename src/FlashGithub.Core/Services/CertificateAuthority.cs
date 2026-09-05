@@ -117,9 +117,13 @@ public sealed class CertificateAuthority
         using var rsa = RSA.Create(2048);
         var rsaKeyPair = DotNetUtilities.GetRsaKeyPair(rsa);
 
+        // 用 CA 证书原始 DER 的 Subject 做颁发者：按字符串重建会颠倒 RDN 顺序，
+        // 导致 OpenSSL/Chrome 严格 DER 匹配失败（Safari 宽松，所以此前只有 Chrome 报错）
+        var caBcCert = DotNetUtilities.FromX509Certificate(ca);
+
         var generator = new X509V3CertificateGenerator();
         generator.SetSerialNumber(new Org.BouncyCastle.Math.BigInteger(1, RandomNumberGenerator.GetBytes(16)));
-        generator.SetIssuerDN(new X509Name(ca.Subject));
+        generator.SetIssuerDN(caBcCert.SubjectDN);
         generator.SetSubjectDN(new X509Name($"CN={host}"));
         generator.SetNotBefore(DateTime.UtcNow.AddMinutes(-5));
         generator.SetNotAfter(DateTime.UtcNow.AddDays(825) < ca.NotAfter
@@ -137,6 +141,8 @@ public sealed class CertificateAuthority
             new ExtendedKeyUsage(new[] { KeyPurposeID.id_kp_serverAuth })); // serverAuth
         generator.AddExtension(X509Extensions.SubjectKeyIdentifier, false,
             new SubjectKeyIdentifierStructure(rsaKeyPair.Public));
+        generator.AddExtension(X509Extensions.AuthorityKeyIdentifier, false,
+            new AuthorityKeyIdentifier(caBcCert.SubjectPublicKeyInfo));
 
         var caKeyPair = _caKeyPair
             ?? throw new InvalidOperationException("CA 私钥尚未初始化");
