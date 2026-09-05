@@ -43,7 +43,8 @@
             <Setter Property="Padding" Value="10,5" />
         </Style>
         <Style Selector="Border.row:pointerover">
-            <Setter Property="Background" Value="#F3F4F6" />
+            <!-- 半透明中性色：亮/暗主题下都只轻微变化，避免吞掉文字颜色 -->
+            <Setter Property="Background" Value="#1E808080" />
         </Style>
     </Window.Styles>
 
