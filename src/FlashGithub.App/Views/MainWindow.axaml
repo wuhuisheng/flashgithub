@@ -73,17 +73,31 @@
                     Content="{Binding ActionButtonText}" />
         </Grid>
 
-        <!-- 提权提示 -->
-        <Border Grid.Row="1" IsVisible="{Binding NeedsElevation}"
-                Background="#FFFBEB" BorderBrush="#F59E0B" BorderThickness="1"
-                CornerRadius="8" Padding="12,8" Margin="0,12,0,0">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <TextBlock Text="⚠️" VerticalAlignment="Center" />
-                <TextBlock Text="监听 80/443 端口需要管理员权限。" VerticalAlignment="Center" />
-                <Button Classes="quiet" Command="{Binding RestartElevatedCommand}"
-                        Content="以管理员身份重启" VerticalAlignment="Center" />
-            </StackPanel>
-        </Border>
+        <!-- 提示条：提权 / hosts 残留 -->
+        <StackPanel Grid.Row="1" Margin="0,12,0,0" Spacing="8">
+            <Border IsVisible="{Binding NeedsElevation}"
+                    Background="#FFFBEB" BorderBrush="#F59E0B" BorderThickness="1"
+                    CornerRadius="8" Padding="12,8">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="⚠️" VerticalAlignment="Center" />
+                    <TextBlock Text="监听 80/443 端口需要管理员权限。" VerticalAlignment="Center" />
+                    <Button Classes="quiet" Command="{Binding RestartElevatedCommand}"
+                            Content="以管理员身份重启" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+            <Border IsVisible="{Binding HasHostsResidue}"
+                    Background="#FEF2F2" BorderBrush="#EF4444" BorderThickness="1"
+                    CornerRadius="8" Padding="12,8">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="⚠️" VerticalAlignment="Center" />
+                    <TextBlock Text="检测到上次未正常关闭的加速条目，正在影响正常上网。" VerticalAlignment="Center" />
+                    <Button Classes="quiet" Command="{Binding RestoreResidueCommand}"
+                            Content="还原 hosts" VerticalAlignment="Center" />
+                    <Button Classes="quiet" Command="{Binding IgnoreResidueCommand}"
+                            Content="忽略" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
 
         <!-- 域名列表 -->
         <Border Grid.Row="2" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8"

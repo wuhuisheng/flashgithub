@@ -41,6 +41,38 @@ public static class PrivilegeService
     /// <summary>弹出系统授权框，以管理员身份执行一段 shell/PowerShell 脚本。用户取消或失败时抛异常。</summary>
     public static async Task RunElevatedAsync(string script, string scriptName)
     {
+        // 已是管理员（如应用以 root 运行）：直接执行，不再弹授权
+        if (IsElevated)
+        {
+            var directPath = Path.Combine(Path.GetTempPath(), scriptName + ".direct" +
+                (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".ps1" : ".sh"));
+            await File.WriteAllTextAsync(directPath, script);
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                using var p = Process.Start(new ProcessStartInfo("powershell.exe",
+                    $"-NoProfile -ExecutionPolicy Bypass -File \"{directPath}\"")
+                { UseShellExecute = false })!;
+                await p.WaitForExitAsync();
+                if (p.ExitCode != 0)
+                    throw new InvalidOperationException($"脚本执行失败（exit {p.ExitCode}）");
+            }
+            else
+            {
+                using var p = Process.Start(new ProcessStartInfo("sh", directPath)
+                {
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                })!;
+                var err = await p.StandardError.ReadToEndAsync();
+                await p.WaitForExitAsync();
+                if (p.ExitCode != 0)
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(err)
+                        ? $"脚本执行失败（exit {p.ExitCode}）"
+                        : err.Trim());
+            }
+            return;
+        }
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var path = Path.Combine(Path.GetTempPath(), scriptName + ".ps1");

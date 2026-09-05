@@ -13,6 +13,14 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 单实例：已有实例时唤起其窗口后退出
+        SingleInstance.Initialize();
+        if (!SingleInstance.IsFirst)
+        {
+            Console.WriteLine("FlashGithub 已在运行，已唤起其窗口");
+            return;
+        }
+
         WaitUntilDisplayAvailableOnMac();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

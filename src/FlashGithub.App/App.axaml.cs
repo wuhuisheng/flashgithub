@@ -41,6 +41,14 @@ public partial class App : Application
                 desktop.Shutdown();
             };
 
+            // 单实例：第二个实例请求唤起窗口
+            SingleInstance.ShowRequested += () =>
+            {
+                desktop.MainWindow!.Show();
+                desktop.MainWindow.WindowState = WindowState.Normal;
+                desktop.MainWindow.Activate();
+            };
+
             SetupTrayIcon(desktop);
         }
 

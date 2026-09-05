@@ -69,6 +69,9 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool _needsElevation;
 
+    [ObservableProperty]
+    private bool _hasHostsResidue;
+
     public string ActionButtonText => IsAccelerating ? "关闭加速" : "一键加速";
 
     public MainViewModel(AccelerationEngine? engine = null)
@@ -92,6 +95,7 @@ public partial class MainViewModel : ViewModelBase
 
         ReloadDomains();
         PrepareAsync();
+        CheckResidueAsync();
     }
 
     private void ReloadDomains()
@@ -117,6 +121,42 @@ public partial class MainViewModel : ViewModelBase
             Log.Error($"初始化证书失败：{ex.Message}");
         }
     }
+
+    /// <summary>启动时检测上次异常退出残留的 hosts 条目，提示用户一键还原。</summary>
+    private async void CheckResidueAsync()
+    {
+        try
+        {
+            var has = await Task.Run(_engine.Hosts.HasResidue);
+            if (has)
+            {
+                Log.Warn("检测到上次未正常关闭的 hosts 加速条目，会影响正常上网，请在上方提示条中还原");
+                HasHostsResidue = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"检测 hosts 残留失败：{ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task RestoreResidueAsync()
+    {
+        try
+        {
+            await Task.Run(_engine.Hosts.RemoveAsync);
+            Log.Info("已还原 hosts，网络恢复正常");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"还原 hosts 失败：{ex.Message}");
+        }
+        HasHostsResidue = false;
+    }
+
+    [RelayCommand]
+    private void IgnoreResidue() => HasHostsResidue = false;
 
     private async Task UpdateCertStatusAsync()
     {

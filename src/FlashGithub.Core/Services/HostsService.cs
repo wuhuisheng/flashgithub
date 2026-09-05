@@ -20,6 +20,20 @@ public sealed class HostsService
 
     private static readonly string[] Markers = [BeginMarker, EndMarker];
 
+    /// <summary>检测 hosts 中是否残留 FlashGithub 加速块（程序异常退出时会留下，影响正常上网）。</summary>
+    public bool HasResidue()
+    {
+        try
+        {
+            return File.Exists(HostsPath)
+                && File.ReadAllLines(HostsPath).Any(l => l.Trim().Equals(BeginMarker, StringComparison.Ordinal));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>读取系统 hosts 中当前生效的 FlashGithub 域名条目。</summary>
     public List<string> GetCurrentEntries()
     {
