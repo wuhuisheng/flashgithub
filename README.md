@@ -45,15 +45,39 @@ GitHub 真实服务器
 # 开发运行
 dotnet run --project src/FlashGithub.App
 
-# 发布单文件（示例：macOS arm64）
-dotnet publish src/FlashGithub.App -c Release -r osx-arm64 --self-contained true /p:PublishSingleFile=true
-# Windows x64
+# macOS 打包（组装 .app 并生成 DMG）
+bash scripts/package-macos.sh osx-arm64 1.0.1
+
+# Windows x64 / Linux x64：自包含单文件
 dotnet publish src/FlashGithub.App -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
-# Linux x64
 dotnet publish src/FlashGithub.App -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
 启动后：点「一键加速」→ 首次会请求安装本地根证书并写入 hosts（可能弹管理员授权框）→ 正常访问 GitHub。
+
+## 从 Release 下载安装
+
+到 [Releases](https://github.com/wuhuisheng/flashgithub/releases) 下载对应平台的产物：
+
+| 文件 | 平台 | 安装方式 |
+|---|---|---|
+| `FlashGithub-macOS-osx-arm64.dmg` | Apple Silicon Mac | 双击打开，把 FlashGithub 拖进 Applications |
+| `FlashGithub-win-x64.zip` | Windows x64 | 解压出单个 exe 直接运行 |
+| `FlashGithub-linux-x64.tar.gz` | Linux x64 | 解压出可执行文件，`chmod +x` 后运行 |
+
+## macOS 运行说明（重要，限制较多）
+
+macOS 对本地网络代理的限制比 Windows/Linux 严格得多，请按以下方式使用：
+
+1. **必须以管理员身份运行**：本代理要监听 80/443 端口，macOS 上只有 root 能绑定。
+   - 终端方式：`sudo /Applications/FlashGithub.app/Contents/MacOS/FlashGithub.App`
+   - 或在应用里点「以管理员身份重启」（会弹系统授权框）。
+2. **证书信任必须人工确认**：首次加速会弹出"你正在对证书信任设置进行更改"，**务必点"更新设置"**。取消的话证书不受信任，浏览器会报"连接不是私密连接"。
+3. **Chrome 用户请关闭"安全 DNS"**：`chrome://settings/security` → 关闭"使用安全 DNS"。Chrome 的 DoH 会绕过系统 hosts 导致代理失效（Safari 无此问题）。改完彻底退出 Chrome（Cmd+Q）再重开。
+4. **不要把程序放在 桌面/文稿/下载 目录**：这三个目录受 TCC 隐私保护，root 子进程无权读取其中的文件，会导致提权重启失败。放在主目录（如 `~/flashgithub`）或 /Applications 均可。
+5. **发布格式说明**：macOS 26 会强制击杀"复制出来的"可执行文件（provenance 校验），因此 macOS 产物是 `.app`/`.app` 打包的 DMG，而 Windows/Linux 是自包含单文件。
+6. **退出前点「关闭加速」**：关窗口只是最小化到托盘；托盘菜单"退出"或 Dock 退出会自动还原 hosts。若异常退出后 GitHub 打不开，删除 `/etc/hosts` 中 `BEGIN/END FlashGithub` 标记块即可还原。
+7. 已知现象：加速期间浏览器证书颁发者显示为 "FlashGithub Local CA" 是本地反代的正常行为。
 
 ## 已知限制
 
