@@ -96,8 +96,10 @@ public static class PrivilegeService
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
+            // 不要用 nohup：BSD nohup 在 osascript 的 sh 环境下 "can't detach from console" 直接失败。
+            // 后台执行 + stdin/stdout 全部重定向即可脱离会话存活。
             var script = $"""
-                nohup '{exe}' > '{stdout}' 2>&1 &
+                '{exe}' > '{stdout}' 2>&1 < /dev/null &
                 echo $! > '{Path.GetTempPath()}/flashgithub-root.pid'
                 """;
             var path = Path.Combine(Path.GetTempPath(), "flashgithub-relaunch.sh");
