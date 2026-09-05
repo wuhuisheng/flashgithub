@@ -56,17 +56,33 @@ public sealed class DomainRegistry
         Load();
     }
 
-    /// <summary>配置目录。提权重启的 root 实例通过 FLASHGITHUB_DATA_DIR 环境变量复用用户的配置与证书。</summary>
+    /// <summary>配置目录。提权运行的 root 实例必须复用发起 sudo 的用户配置（证书/域名清单共用一份）。</summary>
     public static string AppDataDirectory
     {
         get
         {
             var overridden = Environment.GetEnvironmentVariable("FLASHGITHUB_DATA_DIR");
-            return string.IsNullOrWhiteSpace(overridden)
-                ? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "FlashGithub")
-                : overridden;
+            if (!string.IsNullOrWhiteSpace(overridden)) return overridden;
+
+            // sudo 提权时 SUDO_USER 指向真实用户；不处理的话 root 会生成自己的另一套 CA
+            if (Environment.UserName == "root")
+            {
+                var sudoUser = Environment.GetEnvironmentVariable("SUDO_USER");
+                if (!string.IsNullOrEmpty(sudoUser))
+                {
+                    var home = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                        ? $"/Users/{sudoUser}"
+                        : $"/home/{sudoUser}";
+                    if (Directory.Exists(home))
+                        return RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                            ? Path.Combine(home, "Library", "Application Support", "FlashGithub")
+                            : Path.Combine(home, ".config", "FlashGithub");
+                }
+            }
+
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "FlashGithub");
         }
     }
 
