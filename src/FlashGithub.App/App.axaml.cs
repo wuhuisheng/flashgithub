@@ -24,7 +24,7 @@ public partial class App : Application
             _vm = new MainViewModel();
             desktop.MainWindow = new MainWindow { DataContext = _vm };
 
-            // 点关闭按钮 → 隐藏到托盘；真正退出走托盘菜单
+            // 点关闭按钮 → 隐藏到托盘；Dock 右键退出 / Cmd+Q → 清理后真正退出
             desktop.MainWindow.Closing += (_, e) =>
             {
                 if (_forceExit) return;
@@ -34,12 +34,11 @@ public partial class App : Application
 
             desktop.ShutdownRequested += async (_, e) =>
             {
-                if (!_forceExit)
-                {
-                    e.Cancel = true;
-                    return;
-                }
+                if (_forceExit) return;
+                e.Cancel = true;
                 await _vm.ExitAsync();
+                _forceExit = true;
+                desktop.Shutdown();
             };
 
             SetupTrayIcon(desktop);
