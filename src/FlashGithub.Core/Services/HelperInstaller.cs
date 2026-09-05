@@ -47,13 +47,33 @@ public static class HelperInstaller
         if (!OperatingSystem.IsMacOS())
             throw new PlatformNotSupportedException("后台服务仅支持 macOS");
 
-        var staging = await PublishToStagingAsync();
-
         var dataDir = DomainRegistry.AppDataDirectory.Replace("\"", "\\\"");
+        var exePath = Environment.ProcessPath!;
+        var exeDir = Path.GetDirectoryName(exePath)!;
+
+        // 框架依赖运行（开发模式）：不做任何复制——部分环境会击杀复制出的二进制，
+        // 直接让 launchd 以 dotnet 主机运行原始 dll；自包含（安装版）才复制到系统目录。
+        var isSelfContained = File.Exists(Path.Combine(exeDir, "libcoreclr.dylib"));
+        string programArgs;
+        var dotnetRoot = "";
+        if (isSelfContained)
+        {
+            var staging = await PublishToStagingAsync();
+            programArgs = $"<string>{HelperDir}/{Path.GetFileName(exePath)}</string>\\n        <string>--helper</string>";
+            dotnetRoot = HelperDir;
+        }
+        else
+        {
+            var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory(); // .../shared/Microsoft.NETCore.App/<ver>
+            dotnetRoot = Path.GetFullPath(Path.Combine(runtimeDir, "..", "..", ".."));
+            var dotnetHost = Path.Combine(dotnetRoot, "dotnet");
+            var dllPath = Path.ChangeExtension(exePath, ".dll");
+            programArgs = $"<string>{dotnetHost}</string>\\n        <string>{dllPath}</string>\\n        <string>--helper</string>";
+        }
+
+        var stdoutLog = Path.Combine(dataDir, "helper-stdout.log");
+        var stderrLog = Path.Combine(dataDir, "helper-stderr.log");
         var script = $"""
-            mkdir -p "{HelperDir}"
-            cp -R "{staging}/" "{HelperDir}/"
-            chmod -R 755 "{HelperDir}"
             cat > "{PlistPath}" <<'PLIST'
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -61,15 +81,18 @@ public static class HelperInstaller
             <dict>
                 <key>Label</key><string>{Label}</string>
                 <key>ProgramArguments</key>
-                <array>{BuildProgramArgumentsXml(staging)}</array>
+                <array>
+                {programArgs}
+                </array>
                 <key>EnvironmentVariables</key>
                 <dict>
                     <key>FLASHGITHUB_DATA_DIR</key><string>{dataDir}</string>
+                    <key>DOTNET_ROOT</key><string>{dotnetRoot}</string>
                 </dict>
                 <key>RunAtLoad</key><true/>
                 <key>KeepAlive</key><true/>
-                <key>StandardOutPath</key><string>{HelperDir}/stdout.log</string>
-                <key>StandardErrorPath</key><string>{HelperDir}/stderr.log</string>
+                <key>StandardOutPath</key><string>{stdoutLog}</string>
+                <key>StandardErrorPath</key><string>{stderrLog}</string>
             </dict>
             </plist>
             PLIST
