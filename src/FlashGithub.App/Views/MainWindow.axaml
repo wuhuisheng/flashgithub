@@ -85,6 +85,17 @@
                             Content="以管理员身份重启" VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
+            <Border IsVisible="{Binding HasHelperMissing}"
+                    Background="#EFF6FF" BorderBrush="#3B82F6" BorderThickness="1"
+                    CornerRadius="8" Padding="12,8">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="💡" VerticalAlignment="Center" />
+                    <TextBlock Text="安装后台服务后，加速全程免管理员权限（推荐）。" VerticalAlignment="Center" />
+                    <Button Classes="quiet" Command="{Binding InstallHelperCommand}"
+                            IsEnabled="{Binding !IsBusy}"
+                            Content="安装后台服务" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
             <Border IsVisible="{Binding HasHostsResidue}"
                     Background="#FEF2F2" BorderBrush="#EF4444" BorderThickness="1"
                     CornerRadius="8" Padding="12,8">

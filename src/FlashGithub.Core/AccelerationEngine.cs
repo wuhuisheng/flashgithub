@@ -16,6 +16,7 @@ public sealed class AccelerationEngine : IAsyncDisposable
     private readonly ProxyService _proxy;
 
     private CancellationTokenSource? _probeCts;
+    private bool _useHelper;
 
     public AccelerationEngine(DomainRegistry? registry = null, string? configDirectory = null)
     {
@@ -31,7 +32,15 @@ public sealed class AccelerationEngine : IAsyncDisposable
         };
 
         _pool.LatencyUpdated += (domain, ms) => LatencyUpdated?.Invoke(domain, ms);
+        HelperClient.Default.Log += m => Log.Info(m);
+        HelperClient.Default.LatencyUpdated += (domain, ms) => LatencyUpdated?.Invoke(domain, ms);
     }
+
+    /// <summary>后台服务（macOS LaunchDaemon）是否已安装并就绪。</summary>
+    public bool IsHelperReady() => HelperClient.Default.IsAvailable();
+
+    /// <summary>安装 macOS 后台服务（需要一次管理员授权），安装后加速不再需要 sudo。</summary>
+    public Task InstallHelperAsync() => HelperInstaller.InstallAsync();
 
     public DomainRegistry Registry => _registry;
     public TrustService Trust => _trust;
@@ -82,6 +91,19 @@ public sealed class AccelerationEngine : IAsyncDisposable
         Log.Info("写入 hosts 加速条目（可能弹出管理员授权框）…");
         await _hosts.ApplyAsync(enabled);
 
+        if (OperatingSystem.IsMacOS() && HelperClient.Default.IsAvailable())
+        {
+            // 特权后台服务承载 80/443 监听，本进程无需 root
+            _useHelper = true;
+            Log.Info("通过后台服务启动监听…");
+            await HelperClient.Default.StartProxyAsync();
+            IsRunning = true;
+            NeedsElevation = false;
+            Log.Info("加速已开启 ✓（由后台服务承载）");
+            return;
+        }
+        _useHelper = false;
+
         try
         {
             Log.Info("启动本地反向代理…");
@@ -108,7 +130,14 @@ public sealed class AccelerationEngine : IAsyncDisposable
         if (!IsRunning && !_proxy.IsRunning) return;
 
         _probeCts?.Cancel();
-        await _proxy.StopAsync();
+        if (_useHelper)
+        {
+            await HelperClient.Default.StopProxyAsync();
+        }
+        else
+        {
+            await _proxy.StopAsync();
+        }
 
         try
         {
@@ -126,6 +155,8 @@ public sealed class AccelerationEngine : IAsyncDisposable
     /// <summary>手动触发一轮全量 IP 测速，刷新延迟显示。</summary>
     public Task RefreshLatencyAsync()
     {
+        if (IsRunning && _useHelper)
+            return HelperClient.Default.ProbeAsync();
         var enabled = _registry.EnabledDomains;
         return Task.Run(() => _pool.ProbeAllAsync(enabled));
     }

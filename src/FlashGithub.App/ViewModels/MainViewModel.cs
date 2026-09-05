@@ -72,6 +72,9 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasHostsResidue;
 
+    [ObservableProperty]
+    private bool _hasHelperMissing;
+
     public string ActionButtonText => IsAccelerating ? "关闭加速" : "一键加速";
 
     public MainViewModel(AccelerationEngine? engine = null)
@@ -158,6 +161,29 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void IgnoreResidue() => HasHostsResidue = false;
 
+    [RelayCommand]
+    private async Task InstallHelperAsync()
+    {
+        IsBusy = true;
+        StatusText = "正在安装后台服务…";
+        try
+        {
+            await Task.Run(_engine.InstallHelperAsync);
+            HasHelperMissing = false;
+            StatusText = "后台服务已安装";
+            Log.Info("现在点击「一键加速」即可，无需管理员权限");
+        }
+        catch (Exception ex)
+        {
+            StatusText = "后台服务安装失败";
+            Log.Error($"安装后台服务失败：{ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private async Task UpdateCertStatusAsync()
     {
         var trusted = await Task.Run(_engine.IsCertificateTrusted);
@@ -169,6 +195,13 @@ public partial class MainViewModel : ViewModelBase
 
     private async Task StartAccelerationAsync()
     {
+        // macOS：后台服务未安装时提示一次（安装后加速全程免 sudo），不阻塞本次加速
+        if (OperatingSystem.IsMacOS() && !_engine.IsHelperReady())
+        {
+            HasHelperMissing = true;
+            Log.Info("提示：安装后台服务后，加速将不再需要管理员权限（见上方提示条）");
+        }
+
         IsBusy = true;
         StatusText = "正在开启加速…";
         try

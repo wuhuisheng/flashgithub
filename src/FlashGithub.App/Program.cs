@@ -13,6 +13,13 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 特权后台服务模式（LaunchDaemon 以 root 常驻）：不初始化 GUI，不参与单实例控制
+        if (args.Contains("--helper"))
+        {
+            FlashGithub.Core.Services.HelperDaemon.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         // 单实例：已有实例时唤起其窗口后退出
         SingleInstance.Initialize();
         if (!SingleInstance.IsFirst)
