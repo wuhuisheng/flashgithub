@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 还原依赖
+        run: dotnet restore
+
+      - name: 构建
+        run: dotnet build --no-restore -c Release
+
+      # 端到端冒烟测试：DoH 解析 → CA 签发 → 本地反代转发真实请求
+      - name: 冒烟测试（真实访问 GitHub）
+        run: dotnet run --no-build -c Release --project test/FlashGithub.ConsoleTest
+
+  publish:
+    # 主分支推送时发布三平台单文件产物
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build-and-test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 发布单文件
+        run: >
+          dotnet publish src/FlashGithub.App -c Release -r ${{ matrix.rid }}
+          --self-contained true /p:PublishSingleFile=true
+          -o publish/${{ matrix.rid }}
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlashGithub-${{ matrix.rid }}
+          path: publish/${{ matrix.rid }}
