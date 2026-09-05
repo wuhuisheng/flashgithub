@@ -29,12 +29,12 @@ public sealed class UpstreamPool : IDisposable
 
     // 内置种子 IP：GitHub 在国内"时通时断"，仅靠 DoH 单点结果赌性太大。
     // 种子来自 GitHub 官方地址段的常见可用接入点，与 DoH 结果合并成大候选池。
-    private static readonly string[] SeedMain = // github.com 等 Web 层
+    private static readonly string[] SeedMain = // github.com 等 Web 层（多地域分散，晚高峰美段常被阻断）
     [
         "140.82.112.3", "140.82.113.3", "140.82.114.3", "140.82.116.3",
         "140.82.121.3", "140.82.112.4", "140.82.113.4", "140.82.114.4",
         "140.82.116.4", "140.82.121.4", "20.205.243.166", "20.27.177.113",
-        "20.200.245.247",
+        "20.200.245.247", "4.208.26.197", "20.42.65.92",
     ];
     private static readonly string[] SeedApi = // api.github.com 专用 VIP（.6 段）
     [
