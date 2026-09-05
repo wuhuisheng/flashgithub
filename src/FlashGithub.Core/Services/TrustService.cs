@@ -92,9 +92,14 @@ public static class PrivilegeService
             ?? throw new InvalidOperationException("无法确定程序路径");
         exe = exe.Replace("'", "'\\''");
 
+        var stdout = Path.Combine(Path.GetTempPath(), "flashgithub-root.log");
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            var script = $"nohup '{exe}' >/dev/null 2>&1 &";
+            var script = $"""
+                nohup '{exe}' > '{stdout}' 2>&1 &
+                echo $! > '{Path.GetTempPath()}/flashgithub-root.pid'
+                """;
             var path = Path.Combine(Path.GetTempPath(), "flashgithub-relaunch.sh");
             await File.WriteAllTextAsync(path, script);
             var psi = new ProcessStartInfo("osascript",
@@ -108,6 +113,16 @@ public static class PrivilegeService
             await p.WaitForExitAsync();
             if (p.ExitCode != 0)
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? "管理员授权被取消" : err.Trim());
+
+            // 确认新实例真的存活，否则旧实例不退出，把失败原因留给日志文件
+            for (var i = 0; i < 10; i++)
+            {
+                await Task.Delay(500);
+                if (IsProcessAlive(exe)) return;
+            }
+            var why = File.Exists(stdout) ? File.ReadAllText(stdout).Trim() : "";
+            throw new InvalidOperationException(
+                $"新实例未能启动。{(why.Length > 0 ? $"输出：{why}" : "详情见系统崩溃报告或日志文件")}");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -120,6 +135,25 @@ public static class PrivilegeService
         {
             using var p = Process.Start(new ProcessStartInfo("pkexec", exe) { UseShellExecute = false })!;
             await p.WaitForExitAsync();
+        }
+    }
+
+    private static bool IsProcessAlive(string exePath)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("pgrep", $"-f \"{exePath}\"")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+            })!;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length > 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

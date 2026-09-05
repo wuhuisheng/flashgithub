@@ -244,8 +244,8 @@ public partial class MainViewModel : ViewModelBase
     {
         try
         {
+            // 不做加速收尾（hosts 交给新的 root 实例处理），避免再次弹出授权框
             await PrivilegeService.RelaunchElevatedAsync();
-            await ExitAsync();
             Environment.Exit(0);
         }
         catch (Exception ex)
