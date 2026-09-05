@@ -11,10 +11,15 @@ namespace FlashGithub.Core.Services;
 /// </summary>
 public sealed class DohResolver : IDisposable
 {
+    // 参考：域名端点可能"鸡生蛋"解析失败，纯 IP 端点（223.6.6.6 等）永远可用
     private static readonly string[] Servers =
     [
         "https://dns.alidns.com/resolve?name={0}&type=A",
+        "https://223.6.6.6/resolve?name={0}&type=A",
+        "https://223.5.5.5/resolve?name={0}&type=A",
         "https://doh.pub/dns-query?name={0}&type=A",
+        "https://120.53.53.53/resolve?name={0}&type=A",
+        "https://doh.360.cn/resolve?name={0}&type=A",
         "https://1.1.1.1/dns-query?name={0}&type=A",
         "https://8.8.8.8/resolve?name={0}&type=A",
     ];
