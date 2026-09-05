@@ -136,11 +136,24 @@ public sealed class HostsService
             return $"""
                     Copy-Item "{hosts}" "{hosts}.flashgithub.bak" -Force
                     Copy-Item "{tmpPath}" "{hosts}" -Force
+                    ipconfig /flushdns
                     """;
+        }
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            // 关键：替换 hosts 文件（inode 变化）后必须通知 mDNSResponder 重读并清缓存，
+            // 否则系统解析器继续用旧结果（Chrome 自带解析器不受影响，Safari 会绕过代理）
+            return $"""
+                cp "{hosts}" "{hosts}.flashgithub.bak" 2>/dev/null || true
+                cp "{tmpPath}" "{hosts}"
+                killall -HUP mDNSResponder 2>/dev/null || true
+                dscacheutil -flushcache
+                """;
         }
         return $"""
                 cp "{hosts}" "{hosts}.flashgithub.bak" 2>/dev/null || true
                 cp "{tmpPath}" "{hosts}"
+                systemctl restart systemd-resolved 2>/dev/null || true
                 """;
     }
 }
