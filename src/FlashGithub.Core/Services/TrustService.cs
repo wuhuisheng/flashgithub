@@ -96,18 +96,30 @@ public static class PrivilegeService
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            // Desktop/Documents 等 TCC 保护目录中的程序，root 子进程无权读取（EPERM）。
-            // 先由当前用户把程序目录复制到非保护目录，root 实例从那里启动。
-            var exeDir = Path.GetDirectoryName(exe)!;
-            var exeName = Path.GetFileName(exe);
-            var stagingDir = Path.Combine(DomainRegistry.AppDataDirectory, "elevated");
-            Directory.CreateDirectory(stagingDir);
-            foreach (var file in Directory.GetFiles(exeDir))
+            // Desktop/Documents/Downloads 是 TCC 保护目录，root 子进程无权读取（EPERM）。
+            // 仅当程序位于这些目录时，才由当前用户复制到非保护目录供 root 启动；
+            // 程序在普通位置（如 ~/flashgithub、/Applications）时直接启动原始文件。
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var protectedPrefixes = new[]
             {
-                if (file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)) continue;
-                File.Copy(file, Path.Combine(stagingDir, Path.GetFileName(file)), true);
+                Path.Combine(userProfile, "Desktop"),
+                Path.Combine(userProfile, "Documents"),
+                Path.Combine(userProfile, "Downloads"),
+            };
+            if (protectedPrefixes.Any(p =>
+                    exe.StartsWith(p + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+            {
+                var exeDir = Path.GetDirectoryName(exe)!;
+                var exeName = Path.GetFileName(exe);
+                var stagingDir = Path.Combine(DomainRegistry.AppDataDirectory, "elevated");
+                Directory.CreateDirectory(stagingDir);
+                foreach (var file in Directory.GetFiles(exeDir))
+                {
+                    if (file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)) continue;
+                    File.Copy(file, Path.Combine(stagingDir, Path.GetFileName(file)), true);
+                }
+                exe = Path.Combine(stagingDir, exeName);
             }
-            exe = Path.Combine(stagingDir, exeName);
 
             // 不要用 nohup：BSD nohup 在 osascript 的 sh 环境下 "can't detach from console" 直接失败。
             // 后台执行 + stdin/stdout 全部重定向即可脱离会话存活。
