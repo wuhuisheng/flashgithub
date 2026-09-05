@@ -17,3 +17,6 @@ test-cert-dir/
 # macOS / Windows 系统文件
 .DS_Store
 Thumbs.db
+
+# 本地发布/打包产物
+dist/
