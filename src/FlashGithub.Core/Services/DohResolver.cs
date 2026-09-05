@@ -57,14 +57,18 @@ public sealed class DohResolver : IDisposable
             .Select(s => QueryOneAsync(string.Format(s, Uri.EscapeDataString(domain)), ct))
             .ToList();
 
+        // 合并所有服务器的结果：不同 DoH 返回的接入点不同（国内返回新加坡段、国外返回美国段），
+        // 候选越多，被阻断时可用的故障转移 IP 越多
+        var merged = new List<IPAddress>();
         while (tasks.Count > 0)
         {
             var finished = await Task.WhenAny(tasks);
             tasks.Remove(finished);
-            var addresses = await finished;
-            if (addresses.Count > 0) return addresses;
+            foreach (var ip in await finished)
+                if (!merged.Contains(ip))
+                    merged.Add(ip);
         }
-        return [];
+        return merged;
     }
 
     private async Task<IReadOnlyList<IPAddress>> QueryOneAsync(string url, CancellationToken ct)

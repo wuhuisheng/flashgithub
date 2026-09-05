@@ -22,6 +22,34 @@ public sealed class UpstreamPool : IDisposable
 
     private static readonly TimeSpan ResolveInterval = TimeSpan.FromMinutes(10);
 
+    // 内置种子 IP：GitHub 在国内"时通时断"，仅靠 DoH 单点结果赌性太大。
+    // 种子来自 GitHub 官方地址段的常见可用接入点，与 DoH 结果合并成大候选池。
+    private static readonly string[] SeedMain =
+    [
+        "140.82.112.3", "140.82.113.3", "140.82.114.3", "140.82.116.3",
+        "140.82.121.3", "140.82.112.4", "140.82.113.4", "140.82.114.4",
+        "140.82.116.4", "140.82.121.4", "20.205.243.166", "20.27.177.113",
+        "20.200.245.247",
+    ];
+    private static readonly string[] SeedPages = // *.githubusercontent.com
+        ["185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133"];
+    private static readonly string[] SeedAssets = // githubassets.com
+        ["185.199.108.215", "185.199.109.215", "185.199.110.215", "185.199.111.215"];
+
+    private static IEnumerable<IPAddress> GetSeedIps(string domain)
+    {
+        var d = domain.ToLowerInvariant();
+        string[] seeds = d switch
+        {
+            _ when d == "github.githubassets.com" || d.EndsWith(".githubassets.com") => SeedAssets,
+            _ when d.EndsWith(".githubusercontent.com") || d.EndsWith("githubusercontent.com") => SeedPages,
+            _ when d.EndsWith("githubassets.com") => SeedAssets,
+            _ when d.EndsWith("github.com") || d.EndsWith("github.io") => SeedMain,
+            _ => [],
+        };
+        return seeds.Select(IPAddress.Parse);
+    }
+
     private readonly DohResolver _resolver;
     private readonly ConcurrentDictionary<string, DomainState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _resolveLock = new(1, 1);
@@ -46,7 +74,7 @@ public sealed class UpstreamPool : IDisposable
         }
 
         var ordered = OrderCandidates(state);
-        foreach (var ip in ordered.Take(Math.Min(ordered.Length, 6)))
+        foreach (var ip in ordered.Take(Math.Min(ordered.Length, 10)))
         {
             try
             {
@@ -87,7 +115,7 @@ public sealed class UpstreamPool : IDisposable
         // 候选全部失败：强制重新解析后再试一轮
         state.ResolvedAt = DateTimeOffset.MinValue;
         await EnsureCandidatesAsync(host, state, ct);
-        foreach (var ip in OrderCandidates(state).Take(4))
+        foreach (var ip in OrderCandidates(state).Take(6))
         {
             try
             {
@@ -184,16 +212,24 @@ public sealed class UpstreamPool : IDisposable
             if (state.Candidates.Length > 0 && DateTimeOffset.Now - state.ResolvedAt < ResolveInterval)
                 return;
 
-            var addresses = await _resolver.ResolveAsync(host, ct);
-            if (addresses.Count > 0)
+            // DoH 结果与内置种子合并成大候选池（去重），单个 IP 被阻断时有充足的故障转移余地
+            var candidates = new List<IPAddress>();
+            foreach (var ip in GetSeedIps(host))
+                if (!candidates.Contains(ip))
+                    candidates.Add(ip);
+            foreach (var ip in await _resolver.ResolveAsync(host, ct))
+                if (!candidates.Contains(ip))
+                    candidates.Add(ip);
+
+            if (candidates.Count > 0)
             {
-                state.Candidates = addresses.ToArray();
+                state.Candidates = [.. candidates];
                 state.ResolvedAt = DateTimeOffset.Now;
-                Log.Info($"已解析 {host} → {string.Join(", ", state.Candidates.Take(3))}...");
+                Log.Info($"候选 IP 池 {host} 共 {candidates.Count} 个: {string.Join(", ", candidates.Take(3))}...");
             }
             else
             {
-                Log.Warn($"{host} 解析失败（所有 DoH 服务器均不可用）");
+                Log.Warn($"{host} 无任何可用候选 IP（DoH 失败且无种子）");
             }
         }
         finally

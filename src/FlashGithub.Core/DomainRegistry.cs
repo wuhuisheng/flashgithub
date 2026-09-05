@@ -43,6 +43,7 @@ public sealed class DomainRegistry
         "user-images.githubusercontent.com",
         "github.githubassets.com",
         "live.github.com",
+        "alive.github.com",
         "collector.github.com",
     ];
 
