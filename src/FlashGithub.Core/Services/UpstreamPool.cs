@@ -18,9 +18,14 @@ public sealed class UpstreamPool : IDisposable
         public IPAddress? Preferred;   // 最近连接成功的 IP，优先尝试
         public int? LatencyMs;         // 最近一次测速结果，null 表示不可达
         public DateTimeOffset ResolvedAt = DateTimeOffset.MinValue;
+
+        /// <summary>连接失败 IP 的冷却期，期间不再优先尝试。</summary>
+        public readonly Dictionary<IPAddress, DateTimeOffset> CooldownUntil = new();
     }
 
-    private static readonly TimeSpan ResolveInterval = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan FailureCooldown = TimeSpan.FromSeconds(60);
+
+    private static readonly TimeSpan ResolveInterval = TimeSpan.FromMinutes(5);
 
     // 内置种子 IP：GitHub 在国内"时通时断"，仅靠 DoH 单点结果赌性太大。
     // 种子来自 GitHub 官方地址段的常见可用接入点，与 DoH 结果合并成大候选池。
@@ -117,11 +122,13 @@ public sealed class UpstreamPool : IDisposable
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                // 单个 IP 超时，继续下一个
+                // 单个 IP 超时：进入冷却，换下一个
+                state.CooldownUntil[ip] = DateTimeOffset.Now + FailureCooldown;
             }
             catch
             {
-                // 该 IP 不可用（常见于被阻断的 IP），换下一个
+                // 该 IP 不可用（常见于被阻断的 IP）：进入冷却，换下一个
+                state.CooldownUntil[ip] = DateTimeOffset.Now + FailureCooldown;
             }
         }
 
@@ -152,7 +159,7 @@ public sealed class UpstreamPool : IDisposable
             }
             catch
             {
-                // 继续尝试
+                state.CooldownUntil[ip] = DateTimeOffset.Now + FailureCooldown;
             }
         }
 
@@ -226,6 +233,7 @@ public sealed class UpstreamPool : IDisposable
                 return;
 
             // DoH 结果与内置种子合并成大候选池（去重），单个 IP 被阻断时有充足的故障转移余地
+            state.CooldownUntil.Clear();
             var candidates = new List<IPAddress>();
             foreach (var ip in GetSeedIps(host))
                 if (!candidates.Contains(ip))
@@ -253,17 +261,26 @@ public sealed class UpstreamPool : IDisposable
 
     private static IPAddress[] OrderCandidates(DomainState state)
     {
+        // 冷却中的 IP 排到最后（除非全部都在冷却，那就强制全部重试）
+        var now = DateTimeOffset.Now;
+        var ready = new List<IPAddress>();
+        var cooling = new List<IPAddress>();
+        foreach (var ip in state.Candidates)
+            (state.CooldownUntil.TryGetValue(ip, out var until) && until > now ? cooling : ready).Add(ip);
+        if (ready.Count == 0) ready = cooling;
+
         var list = new List<IPAddress>(state.Candidates.Length);
-        if (state.Preferred is not null && state.Candidates.Contains(state.Preferred))
+        if (state.Preferred is not null && ready.Contains(state.Preferred))
             list.Add(state.Preferred);
         // 从 NextIndex 开始轮转，避免每次都从第一个 IP 重试
-        var start = state.NextIndex % Math.Max(state.Candidates.Length, 1);
-        for (var i = 0; i < state.Candidates.Length; i++)
+        var start = state.NextIndex % Math.Max(ready.Count, 1);
+        for (var i = 0; i < ready.Count; i++)
         {
-            var ip = state.Candidates[(start + i) % state.Candidates.Length];
+            var ip = ready[(start + i) % ready.Count];
             if (!list.Contains(ip)) list.Add(ip);
         }
-        state.NextIndex = (state.NextIndex + 1) % Math.Max(state.Candidates.Length, 1);
+        list.AddRange(cooling.Except(list));
+        state.NextIndex = (state.NextIndex + 1) % Math.Max(ready.Count, 1);
         return [.. list];
     }
 

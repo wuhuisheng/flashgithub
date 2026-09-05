@@ -118,10 +118,33 @@ public sealed class AccelerationEngine : IAsyncDisposable
         }
 
         _probeCts = new CancellationTokenSource();
-        _ = Task.Run(() => _pool.ProbeAllAsync(enabled, _probeCts.Token));
+        _ = Task.Run(() => ProbeLoopAsync(_probeCts.Token));
 
         IsRunning = true;
         Log.Info("加速已开启 ✓");
+    }
+
+    /// <summary>后台持续测速：每 3 分钟一轮，保持候选 IP 池的"最优 IP"始终新鲜。</summary>
+    private async Task ProbeLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await _pool.ProbeAllAsync(_registry.EnabledDomains, ct);
+                await Task.Delay(TimeSpan.FromMinutes(3), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"后台测速异常：{ex.Message}");
+                try { await Task.Delay(TimeSpan.FromSeconds(30), ct); }
+                catch (OperationCanceledException) { return; }
+            }
+        }
     }
 
     /// <summary>关闭加速：停止代理、还原 hosts。证书保留（可在证书页卸载）。</summary>

@@ -45,7 +45,7 @@ public sealed class DohResolver : IDisposable
 
         var result = await ResolveUncachedAsync(domain, ct);
         var ttl = result.Count > 0
-            ? TimeSpan.FromMinutes(10)
+            ? TimeSpan.FromMinutes(5)
             : TimeSpan.FromMinutes(2);
         _cache[domain] = new CacheEntry(result, DateTimeOffset.Now + ttl);
         return result;

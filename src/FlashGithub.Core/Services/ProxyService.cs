@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
@@ -93,7 +94,19 @@ public sealed class ProxyService : IAsyncDisposable
         {
             var host = context.Request.Host.Host;
             var scheme = context.Request.IsHttps ? "https" : "http";
-            var error = await forwarder.SendAsync(context, $"{scheme}://{host}", httpClient);
+            var destination = $"{scheme}://{host}";
+
+            var error = await forwarder.SendAsync(context, destination, httpClient);
+
+            // 幂等请求（GET/HEAD）失败且尚未向客户端写出任何响应时，
+            // 自动换一条上游连接重试一次（连接池会轮转 IP 并冷却刚失败的 IP）
+            if (error != ForwarderError.None
+                && !context.Response.HasStarted
+                && (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)))
+            {
+                Log.Info($"转发 {host}{context.Request.Path} 首次失败（{error}），自动重试…");
+                error = await forwarder.SendAsync(context, destination, httpClient);
+            }
 
             if (error != ForwarderError.None
                 && context.Features.Get<IForwarderErrorFeature>() is { } errorFeature)

@@ -118,8 +118,7 @@ public static class HelperDaemon
                     if (_proxy is { IsRunning: false })
                     {
                         await _proxy.StartAsync();
-                        var domains = _registry!.EnabledDomains;
-                        _ = Task.Run(() => _pool!.ProbeAllAsync(domains));
+                        StartProbeLoop();
                     }
                     await ReplyAsync(writer, id, true, null);
                     break;
@@ -127,6 +126,7 @@ public static class HelperDaemon
                 case "stop":
                     if (_proxy is { IsRunning: true })
                         await _proxy.StopAsync();
+                    _probeCts?.Cancel();
                     await ReplyAsync(writer, id, true, null);
                     break;
 
@@ -159,5 +159,28 @@ public static class HelperDaemon
     private static async Task ReplyAsync(StreamWriter writer, string? id, bool ok, string? message)
     {
         await writer.WriteLineAsync(JsonSerializer.Serialize(new { id, ok, message }));
+    }
+
+    private static CancellationTokenSource? _probeCts;
+
+    /// <summary>后台持续测速：每 3 分钟一轮，与 UI 侧引擎逻辑一致。</summary>
+    private static void StartProbeLoop()
+    {
+        _probeCts?.Cancel();
+        _probeCts = new CancellationTokenSource();
+        var ct = _probeCts.Token;
+        _ = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await _pool!.ProbeAllAsync(_registry!.EnabledDomains, ct);
+                    await Task.Delay(TimeSpan.FromMinutes(3), ct);
+                }
+                catch (OperationCanceledException) { return; }
+                catch { try { await Task.Delay(TimeSpan.FromSeconds(30), ct); } catch (OperationCanceledException) { return; } }
+            }
+        });
     }
 }
