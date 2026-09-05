@@ -221,14 +221,34 @@ public sealed class TrustService
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
                 EnsurePemExported();
-                using var p = Process.Start(new ProcessStartInfo("security", $"verify-cert -c \"{_pemPath}\"")
+                // root 实例的钥匙串搜索列表里没有用户的登录钥匙串，必须显式指定：
+                // 配置目录（~/Library/Application Support/FlashGithub）向上三级即用户主目录。
+                string? userHome;
+                var dataDir = DomainRegistry.AppDataDirectory;
+                if (Environment.GetEnvironmentVariable("FLASHGITHUB_DATA_DIR") is not null)
+                    userHome = Path.GetFullPath(Path.Combine(dataDir, "..", "..", ".."));
+                else
+                    userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+                var keychains = new[]
                 {
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                })!;
-                p.WaitForExit(5000);
-                return p.ExitCode == 0;
+                    Path.Combine(userHome, "Library", "Keychains", "login.keychain-db"),
+                    "/Library/Keychains/System.keychain",
+                };
+                foreach (var keychain in keychains)
+                {
+                    if (!File.Exists(keychain)) continue;
+                    using var p = Process.Start(new ProcessStartInfo("security",
+                        $"verify-cert -c \"{_pemPath}\" -k \"{keychain}\"")
+                    {
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    })!;
+                    p.WaitForExit(5000);
+                    if (p.ExitCode == 0) return true;
+                }
+                return false;
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

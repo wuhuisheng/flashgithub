@@ -146,6 +146,7 @@ public partial class MainViewModel : ViewModelBase
         finally
         {
             IsBusy = false;
+            await UpdateCertStatusAsync();
         }
     }
 
