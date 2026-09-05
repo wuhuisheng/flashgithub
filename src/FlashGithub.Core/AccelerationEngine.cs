@@ -12,10 +12,12 @@ public sealed class AccelerationEngine : IAsyncDisposable
     private readonly TrustService _trust;
     private readonly HostsService _hosts;
     private readonly DohResolver _resolver;
+    private readonly GitHubRangeScanner _scanner;
     private readonly UpstreamPool _pool;
     private readonly ProxyService _proxy;
 
     private CancellationTokenSource? _probeCts;
+    private CancellationTokenSource? _scanCts;
     private bool _useHelper;
 
     public AccelerationEngine(DomainRegistry? registry = null, string? configDirectory = null)
@@ -25,7 +27,8 @@ public sealed class AccelerationEngine : IAsyncDisposable
         _trust = new TrustService(_ca, configDirectory);
         _hosts = new HostsService();
         _resolver = new DohResolver();
-        _pool = new UpstreamPool(_resolver);
+        _scanner = new GitHubRangeScanner(configDirectory);
+        _pool = new UpstreamPool(_resolver, _scanner);
         _proxy = new ProxyService(_ca, _pool)
         {
             AllowedDomains = () => _registry.EnabledDomains,
@@ -120,6 +123,11 @@ public sealed class AccelerationEngine : IAsyncDisposable
         _probeCts = new CancellationTokenSource();
         _ = Task.Run(() => ProbeLoopAsync(_probeCts.Token));
 
+        // 网段自扫描：立即一轮 + 每小时重扫
+        _scanCts?.Cancel();
+        _scanCts = new CancellationTokenSource();
+        _ = _scanner.RunLoopAsync(() => _registry.EnabledDomains, _scanCts.Token);
+
         IsRunning = true;
         Log.Info("加速已开启 ✓");
     }
@@ -153,6 +161,7 @@ public sealed class AccelerationEngine : IAsyncDisposable
         if (!IsRunning && !_proxy.IsRunning) return;
 
         _probeCts?.Cancel();
+        _scanCts?.Cancel();
         if (_useHelper)
         {
             await HelperClient.Default.StopProxyAsync();

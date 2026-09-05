@@ -69,13 +69,18 @@ public sealed class UpstreamPool : IDisposable
     }
 
     private readonly DohResolver _resolver;
+    private readonly GitHubRangeScanner? _scanner;
     private readonly ConcurrentDictionary<string, DomainState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _resolveLock = new(1, 1);
 
     /// <summary>(域名, 延迟ms或null) 测速结果更新时触发。</summary>
     public event Action<string, int?>? LatencyUpdated;
 
-    public UpstreamPool(DohResolver resolver) => _resolver = resolver;
+    public UpstreamPool(DohResolver resolver, GitHubRangeScanner? scanner = null)
+    {
+        _resolver = resolver;
+        _scanner = scanner;
+    }
 
     /// <summary>
     /// 为代理提供连接：解析 → 依次尝试候选 IP → 返回已就绪的流（443 端口完成 TLS 握手，SNI 为真实域名，
@@ -232,9 +237,12 @@ public sealed class UpstreamPool : IDisposable
             if (state.Candidates.Length > 0 && DateTimeOffset.Now - state.ResolvedAt < ResolveInterval)
                 return;
 
-            // DoH 结果与内置种子合并成大候选池（去重），单个 IP 被阻断时有充足的故障转移余地
+            // 候选池优先级：自扫描已验证 IP（本机实测）> DoH 动态解析 > 内置种子
             state.CooldownUntil.Clear();
             var candidates = new List<IPAddress>();
+            foreach (var ip in _scanner?.GetWorking(host) ?? [])
+                if (!candidates.Contains(ip))
+                    candidates.Add(ip);
             foreach (var ip in GetSeedIps(host))
                 if (!candidates.Contains(ip))
                     candidates.Add(ip);

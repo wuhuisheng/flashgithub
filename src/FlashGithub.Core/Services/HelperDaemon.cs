@@ -19,6 +19,7 @@ public static class HelperDaemon
     private static ProxyService? _proxy;
     private static UpstreamPool? _pool;
     private static DomainRegistry? _registry;
+    private static GitHubRangeScanner? _scanner;
 
     public static async Task RunAsync()
     {
@@ -27,7 +28,8 @@ public static class HelperDaemon
 
         var ca = new CertificateAuthority(dataDir);
         ca.EnsureCreated();
-        _pool = new UpstreamPool(new DohResolver());
+        _scanner = new GitHubRangeScanner(dataDir);
+        _pool = new UpstreamPool(new DohResolver(), _scanner);
         _registry = new DomainRegistry(dataDir);
         _proxy = new ProxyService(ca, _pool) { AllowedDomains = () => _registry.EnabledDomains };
 
@@ -119,6 +121,8 @@ public static class HelperDaemon
                     {
                         await _proxy.StartAsync();
                         StartProbeLoop();
+                        var scanCts = new CancellationTokenSource();
+                        _ = _scanner!.RunLoopAsync(() => _registry!.EnabledDomains, scanCts.Token);
                     }
                     await ReplyAsync(writer, id, true, null);
                     break;
