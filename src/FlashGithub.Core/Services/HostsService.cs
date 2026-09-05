@@ -95,7 +95,11 @@ public sealed class HostsService
             var line = raw.TrimEnd();
             if (line.Trim().Equals(BeginMarker, StringComparison.Ordinal)) { inside = true; continue; }
             if (line.Trim().Equals(EndMarker, StringComparison.Ordinal)) { inside = false; continue; }
-            if (!inside) sb.AppendLine(line);
+            if (inside) continue;
+
+            // 块外与受管域名冲突的旧条目一并清除（否则先匹配生效会绕过本地代理）
+            if (IsManagedEntry(line, domains)) continue;
+            sb.AppendLine(line);
         }
         // 去掉文件尾部多余空行后再追加
         while (sb.Length > 0 && (sb[^1] == '\n' || sb[^1] == '\r'))
@@ -105,13 +109,22 @@ public sealed class HostsService
         {
             sb.AppendLine();
             sb.AppendLine(BeginMarker);
-            sb.AppendLine("# 本块由 FlashGithub 自动维护，请勿手工编辑");
+            // hosts 文件必须保持纯 ASCII：非 ASCII 注释会导致 mDNSResponder 拒绝整个文件
+            sb.AppendLine("# Managed by FlashGithub. Do not edit this block.");
             foreach (var domain in domains)
                 sb.AppendLine($"127.0.0.1 {domain}");
             sb.Append(EndMarker);
         }
         sb.Append('\n');
         return sb.ToString();
+    }
+
+    private static bool IsManagedEntry(string line, IReadOnlyCollection<string> domains)
+    {
+        var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2
+            && parts[0] == "127.0.0.1"
+            && domains.Contains(parts[1], StringComparer.OrdinalIgnoreCase);
     }
 
     private static string BuildCopyScript(string tmpPath)
