@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FlashGithub.App/FlashGithub.App.csproj" />
+    <Project Path="src/FlashGithub.Core/FlashGithub.Core.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/FlashGithub.ConsoleTest/FlashGithub.ConsoleTest.csproj" />
+  </Folder>
+</Solution>

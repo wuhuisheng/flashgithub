@@ -1,0 +1,98 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:FlashGithub.App.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="680"
+        x:Class="FlashGithub.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/app.ico"
+        Width="760" Height="680"
+        MinWidth="640" MinHeight="520"
+        Title="FlashGithub — GitHub 网络加速">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,180,Auto" Margin="16">
+
+        <!-- 顶部：状态 + 主开关 -->
+        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding StatusText}" FontSize="22" FontWeight="Bold" />
+                <TextBlock Text="{Binding CertStatusText}" FontSize="12" Opacity="0.7"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+            <Button Command="{Binding ToggleAccelerationCommand}"
+                    IsEnabled="{Binding !IsBusy}"
+                    Padding="24,12" FontSize="15" FontWeight="SemiBold"
+                    VerticalAlignment="Center"
+                    Content="{Binding ActionButtonText}" />
+        </Grid>
+
+        <!-- 提权提示 -->
+        <Border Grid.Row="1" IsVisible="{Binding NeedsElevation}"
+                Background="#FFFDE68A" CornerRadius="6" Padding="10,6" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="需要管理员权限（监听 80/443 端口）。"
+                           VerticalAlignment="Center" />
+                <Button Command="{Binding RestartElevatedCommand}" Margin="10,0,0,0"
+                        Padding="10,4" Content="以管理员身份重启" />
+            </StackPanel>
+        </Border>
+
+        <!-- 域名列表 -->
+        <Border Grid.Row="2" BorderBrush="#20808080" BorderThickness="1" CornerRadius="8" Padding="4">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6">
+                    <TextBlock Text="加速域名" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Command="{Binding EnableAllDomainsCommand}" Content="全选"
+                            Padding="8,2" Margin="12,0,0,0" />
+                    <Button Command="{Binding DisableAllDomainsCommand}" Content="全不选"
+                            Padding="8,2" Margin="6,0,0,0" />
+                    <Button Command="{Binding RefreshLatencyCommand}" Content="刷新测速"
+                            IsEnabled="{Binding !IsBusy}" Padding="8,2" Margin="6,0,0,0" />
+                </StackPanel>
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Domains}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DomainItemViewModel">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="10,3">
+                                    <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Domain}"
+                                               VerticalAlignment="Center" Margin="8,0" />
+                                    <TextBlock Grid.Column="2" Text="{Binding LatencyText}"
+                                               VerticalAlignment="Center" Opacity="0.65" />
+                                    <Button Grid.Column="3" Content="✕" Padding="6,0" Margin="10,0,0,0"
+                                            IsVisible="{Binding CanRemove}"
+                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveDomainCommand}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- 自定义域名 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock Text="添加自定义域名（如 huggingface.co、cdn-lfs.huggingface.co）:"
+                       VerticalAlignment="Center" />
+            <TextBox Text="{Binding NewDomain}" Width="260" Margin="6,0,0,0" />
+            <Button Command="{Binding AddDomainCommand}" Content="添加" Padding="14,4" Margin="6,0,0,0" />
+        </StackPanel>
+
+        <!-- 日志 -->
+        <Border Grid.Row="4" Margin="0,10,0,0">
+            <TextBox Text="{Binding LogText}" IsReadOnly="True"
+                     TextWrapping="NoWrap" AcceptsReturn="True"
+                     FontSize="12" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+        </Border>
+
+        <TextBlock Grid.Row="5" Text="开启加速会修改系统 hosts 并需要信任本地根证书；关闭加速会自动还原。"
+                   FontSize="11" Opacity="0.6" Margin="0,8,0,0" TextWrapping="Wrap" />
+    </Grid>
+</Window>

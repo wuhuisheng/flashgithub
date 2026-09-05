@@ -1,0 +1,19 @@
+# .NET 构建产物
+bin/
+obj/
+artifacts/
+publish/
+
+# 测试产物
+test-cert-dir/
+
+# IDE
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# macOS / Windows 系统文件
+.DS_Store
+Thumbs.db
