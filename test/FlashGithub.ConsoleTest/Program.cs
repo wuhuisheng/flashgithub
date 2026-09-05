@@ -20,7 +20,7 @@ var proxy = new ProxyService(ca, pool) { HttpsPort = 8443, HttpPort = 8080 };
 await proxy.StartAsync();
 Console.WriteLine("[3] 代理已在 127.0.0.1:8443/8080 启动，开始用 curl 验证…");
 
-var psi = new System.Diagnostics.ProcessStartInfo("/usr/bin/curl",
+var psi = new System.Diagnostics.ProcessStartInfo("curl",
     "-sk -o /dev/null -w %{http_code} --resolve github.com:8443:127.0.0.1 https://github.com:8443/")
 { RedirectStandardOutput = true };
 var curl = System.Diagnostics.Process.Start(psi)!;
@@ -28,7 +28,7 @@ var code = (await curl.StandardOutput.ReadToEndAsync()).Trim();
 await curl.WaitForExitAsync();
 Console.WriteLine($"    HTTPS 转发 github.com → HTTP {code}");
 
-var psi2 = new System.Diagnostics.ProcessStartInfo("/usr/bin/curl",
+var psi2 = new System.Diagnostics.ProcessStartInfo("curl",
     "-s -o /dev/null -w %{http_code} --resolve github.com:8080:127.0.0.1 http://github.com:8080/")
 { RedirectStandardOutput = true };
 var curl2 = System.Diagnostics.Process.Start(psi2)!;
