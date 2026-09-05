@@ -24,12 +24,22 @@ public sealed class UpstreamPool : IDisposable
 
     // 内置种子 IP：GitHub 在国内"时通时断"，仅靠 DoH 单点结果赌性太大。
     // 种子来自 GitHub 官方地址段的常见可用接入点，与 DoH 结果合并成大候选池。
-    private static readonly string[] SeedMain =
+    private static readonly string[] SeedMain = // github.com 等 Web 层
     [
         "140.82.112.3", "140.82.113.3", "140.82.114.3", "140.82.116.3",
         "140.82.121.3", "140.82.112.4", "140.82.113.4", "140.82.114.4",
         "140.82.116.4", "140.82.121.4", "20.205.243.166", "20.27.177.113",
         "20.200.245.247",
+    ];
+    private static readonly string[] SeedApi = // api.github.com 专用 VIP（.6 段）
+    [
+        "140.82.112.6", "140.82.113.6", "140.82.114.6", "140.82.116.6",
+        "140.82.121.6", "20.205.243.168",
+    ];
+    private static readonly string[] SeedCodeload = // codeload 专用 VIP（.10 段）
+    [
+        "140.82.112.10", "140.82.113.10", "140.82.114.10", "140.82.116.10",
+        "140.82.121.10", "20.205.243.165",
     ];
     private static readonly string[] SeedPages = // *.githubusercontent.com
         ["185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133"];
@@ -39,8 +49,11 @@ public sealed class UpstreamPool : IDisposable
     private static IEnumerable<IPAddress> GetSeedIps(string domain)
     {
         var d = domain.ToLowerInvariant();
+        // 各子域的接入点 VIP 段不同，绝不能混用（API 域名打到 Web VIP 会被 301 跳转）
         string[] seeds = d switch
         {
+            "api.github.com" => SeedApi,
+            "codeload.github.com" => SeedCodeload,
             _ when d == "github.githubassets.com" || d.EndsWith(".githubassets.com") => SeedAssets,
             _ when d.EndsWith(".githubusercontent.com") || d.EndsWith("githubusercontent.com") => SeedPages,
             _ when d.EndsWith("githubassets.com") => SeedAssets,
