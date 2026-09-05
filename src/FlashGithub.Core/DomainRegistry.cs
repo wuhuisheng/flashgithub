@@ -56,10 +56,19 @@ public sealed class DomainRegistry
         Load();
     }
 
-    public static string AppDataDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "FlashGithub");
+    /// <summary>配置目录。提权重启的 root 实例通过 FLASHGITHUB_DATA_DIR 环境变量复用用户的配置与证书。</summary>
+    public static string AppDataDirectory
+    {
+        get
+        {
+            var overridden = Environment.GetEnvironmentVariable("FLASHGITHUB_DATA_DIR");
+            return string.IsNullOrWhiteSpace(overridden)
+                ? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "FlashGithub")
+                : overridden;
+        }
+    }
 
     public IReadOnlyList<DomainConfig> Domains
     {

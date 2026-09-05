@@ -96,9 +96,24 @@ public static class PrivilegeService
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
+            // Desktop/Documents 等 TCC 保护目录中的程序，root 子进程无权读取（EPERM）。
+            // 先由当前用户把程序目录复制到非保护目录，root 实例从那里启动。
+            var exeDir = Path.GetDirectoryName(exe)!;
+            var exeName = Path.GetFileName(exe);
+            var stagingDir = Path.Combine(DomainRegistry.AppDataDirectory, "elevated");
+            Directory.CreateDirectory(stagingDir);
+            foreach (var file in Directory.GetFiles(exeDir))
+            {
+                if (file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)) continue;
+                File.Copy(file, Path.Combine(stagingDir, Path.GetFileName(file)), true);
+            }
+            exe = Path.Combine(stagingDir, exeName);
+
             // 不要用 nohup：BSD nohup 在 osascript 的 sh 环境下 "can't detach from console" 直接失败。
             // 后台执行 + stdin/stdout 全部重定向即可脱离会话存活。
+            var dataDir = DomainRegistry.AppDataDirectory.Replace("'", "'\\''");
             var script = $"""
+                export FLASHGITHUB_DATA_DIR='{dataDir}'
                 '{exe}' > '{stdout}' 2>&1 < /dev/null &
                 echo $! > '{Path.GetTempPath()}/flashgithub-root.pid'
                 """;
