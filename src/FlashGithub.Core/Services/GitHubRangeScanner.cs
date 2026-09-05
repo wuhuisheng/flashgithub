@@ -92,6 +92,52 @@ public sealed class GitHubRangeScanner
         }
     }
 
+    private readonly DohResolver _apiResolver = new();
+
+    /// <summary>用 DoH 解析结果直连 api.github.com 拉 meta（原始 HTTP/1.0，绕过 hosts 与代理）。</summary>
+    private async Task<string?> FetchMetaViaUpstreamAsync(CancellationToken ct)
+    {
+        var ips = new List<IPAddress>();
+        try { ips.AddRange(await _apiResolver.ResolveAsync("api.github.com", ct)); } catch { }
+        foreach (var v in new[] { "140.82.112.6", "140.82.121.6" })
+            if (IPAddress.TryParse(v, out var ip) && !ips.Contains(ip))
+                ips.Add(ip);
+
+        foreach (var ip in ips)
+        {
+            try
+            {
+                using var tcp = new TcpClient();
+                using var t1 = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                t1.CancelAfter(3000);
+                await tcp.ConnectAsync(ip, 443, t1.Token);
+
+                using var ssl = new SslStream(tcp.GetStream());
+                using var t2 = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                t2.CancelAfter(5000);
+                await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                {
+                    TargetHost = "api.github.com",
+                }, t2.Token);
+
+                using var writer = new StreamWriter(ssl, leaveOpen: true) { AutoFlush = true };
+                await writer.WriteAsync("GET /meta HTTP/1.0\r\nHost: api.github.com\r\nUser-Agent: FlashGithub\r\n\r\n");
+
+                using var reader = new StreamReader(ssl, leaveOpen: true);
+                var raw = await reader.ReadToEndAsync(ct);
+                var split = raw.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                var body = split >= 0 ? raw[(split + 4)..] : null;
+                if (body is not null && body.Contains('"'))
+                {
+                    Log.Info($"已通过 {ip} 拉取官方网段（{body.Length} 字节）");
+                    return body;
+                }
+            }
+            catch { }
+        }
+        return null;
+    }
+
     private static string TierOf(string host)
     {
         var d = host.ToLowerInvariant();
@@ -133,27 +179,40 @@ public sealed class GitHubRangeScanner
     /// <summary>拉取网段列表（在线优先，失败回退本地缓存）。</summary>
     private async Task<List<string>> LoadRangesAsync(string tier, CancellationToken ct)
     {
-        List<string>? all = null;
-        try
+        Dictionary<string, List<string>>? all = null;
+
+        // 优先：绕开系统 hosts 直连 api.github.com（hosts 可能把它指向 127.0.0.1 造成鸡生蛋）
+        var meta = await FetchMetaViaUpstreamAsync(ct);
+        if (!string.IsNullOrEmpty(meta))
         {
-            using var resp = await _metaClient.GetAsync("https://api.github.com/meta", ct);
-            if (resp.IsSuccessStatusCode)
-            {
-                all = ParseRanges(await resp.Content.ReadAsStringAsync(ct));
-                try { await File.WriteAllTextAsync(_rangeCachePath, JsonSerializer.Serialize(all), ct); }
-                catch { }
-            }
+            all = ParseRanges(meta);
+            try { await File.WriteAllTextAsync(_rangeCachePath, JsonSerializer.Serialize(all), ct); }
+            catch { }
         }
-        catch (Exception ex)
+
+        if (all is null || all.Count == 0)
         {
-            Log.Warn($"拉取 GitHub 网段失败：{ex.Message}，尝试本地缓存");
+            try
+            {
+                using var resp = await _metaClient.GetAsync("https://api.github.com/meta", ct);
+                if (resp.IsSuccessStatusCode)
+                {
+                    all = ParseRanges(await resp.Content.ReadAsStringAsync(ct));
+                    try { await File.WriteAllTextAsync(_rangeCachePath, JsonSerializer.Serialize(all), ct); }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"拉取 GitHub 网段失败：{ex.Message}，尝试本地缓存");
+            }
         }
 
         if ((all is null || all.Count == 0) && File.Exists(_rangeCachePath))
         {
             try
             {
-                all = JsonSerializer.Deserialize<List<string>>(
+                all = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
                     await File.ReadAllTextAsync(_rangeCachePath, ct));
             }
             catch { }
@@ -161,27 +220,29 @@ public sealed class GitHubRangeScanner
 
         var result = new List<string>();
         if (all is not null && TierRanges.TryGetValue(tier, out var keys))
-            foreach (var cidr in all)
-                if (keys.Any(cidr.StartsWith))
-                    result.Add(cidr);
+            foreach (var key in keys)
+                if (all.TryGetValue(key, out var list))
+                    result.AddRange(list);
+        Log.Info($"自扫描 {tier}：命中官方网段 {result.Count} 个");
         return result;
     }
 
-    private static List<string> ParseRanges(string json)
+    private static Dictionary<string, List<string>> ParseRanges(string json)
     {
-        var result = new List<string>();
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         using var doc = JsonDocument.Parse(json);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
             if (prop.Value.ValueKind != JsonValueKind.Array) continue;
+            var list = new List<string>();
             foreach (var item in prop.Value.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String) continue;
                 var v = item.GetString();
-                if (v is null) continue;
                 // 只要 IPv4 网段
-                if (v.Contains('/') && !v.Contains(':')) result.Add(v);
+                if (v is not null && v.Contains('/') && !v.Contains(':')) list.Add(v);
             }
+            if (list.Count > 0) result[prop.Name] = list;
         }
         return result;
     }
