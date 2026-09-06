@@ -11,13 +11,20 @@ sealed class Program
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
     [STAThread]
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
         // 特权后台服务模式（LaunchDaemon 以 root 常驻）：不初始化 GUI，不参与单实例控制
         if (args.Contains("--helper"))
         {
             FlashGithub.Core.Services.HelperDaemon.RunAsync().GetAwaiter().GetResult();
-            return;
+            return 0;
+        }
+
+        // 无界面模式（Linux 服务器 / 无头环境）：不初始化 GUI，不需要显示器
+        if (args.Contains("--cli"))
+        {
+            return FlashGithub.Core.Services.HeadlessRunner.RunAsync(args)
+                .GetAwaiter().GetResult();
         }
 
         // 单实例：已有实例时唤起其窗口后退出
@@ -25,11 +32,12 @@ sealed class Program
         if (!SingleInstance.IsFirst)
         {
             Console.WriteLine("FlashGithub 已在运行，已唤起其窗口");
-            return;
+            return 0;
         }
 
         WaitUntilDisplayAvailableOnMac();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        return 0;
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

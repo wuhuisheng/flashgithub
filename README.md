@@ -79,6 +79,43 @@ macOS 对本地网络代理的限制比 Windows/Linux 严格得多，请按以�
 6. **退出前点「关闭加速」**：关窗口只是最小化到托盘；托盘菜单"退出"或 Dock 退出会自动还原 hosts。若异常退出后 GitHub 打不开，删除 `/etc/hosts` 中 `BEGIN/END FlashGithub` 标记块即可还原。
 7. 已知现象：加速期间浏览器证书颁发者显示为 "FlashGithub Local CA" 是本地反代的正常行为。
 
+## Linux 服务器 / 无界面部署
+
+无 UI 直接运行（适合服务器，需要 root 以监听 80/443 和修改 hosts）：
+
+```bash
+sudo ./FlashGithub.App --cli          # 启动加速（Ctrl+C 停止并还原 hosts）
+sudo ./FlashGithub.App --cli --stop   # 仅还原 hosts
+```
+
+首次运行会自动生成并安装本地 CA（Debian/Ubuntu 走 `update-ca-certificates`）。让 git/curl 信任它：
+
+```bash
+sudo git config --global http.sslCAInfo ~/Library/Application\ Support/FlashGithub/flashgithub-ca.crt   # macOS 路径示例
+# Linux: sudo cp ~/.config/FlashGithub/flashgithub-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+```
+
+注册为 systemd 服务（开机自启）：
+
+```bash
+sudo tee /etc/systemd/system/flashgithub.service <<'UNIT'
+[Unit]
+Description=FlashGithub Accelerator
+After=network-online.target
+
+[Service]
+ExecStart=/opt/flashgithub/FlashGithub.App --cli
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl enable --now flashgithub
+```
+
+> 注意：服务器场景请勿同时运行其他加速工具（如 Steam++），多个代理会抢占 443 端口和 hosts，导致域名大面积失效。
+
 ## 已知限制
 
 - **SSH（git@github.com，22 端口）不走本代理**。请改用 HTTPS 克隆，或给 SSH 配置 `[ssh]` over 443 端口（`Host github.com / HostName ssh.github.com / Port 443`）。
