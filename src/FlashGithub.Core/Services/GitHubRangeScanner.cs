@@ -165,10 +165,10 @@ public sealed class GitHubRangeScanner
         }
 
         var host = TierPrimaryHost[tier];
-        var working = await TlsProbeAsync(reachable, host, ct);
+        var working = await TlsProbeAsync(reachable, host, tier, ct);
         if (working.Count == 0)
         {
-            Log.Warn($"自扫描 {tier}：{reachable.Count} 个可达 IP 的 TLS 验证均失败");
+            Log.Warn($"自扫描 {tier}：{reachable.Count} 个可达 IP 的 HTTP 验证均失败");
             return;
         }
 
@@ -304,7 +304,7 @@ public sealed class GitHubRangeScanner
     }
 
     /// <summary>对可达 IP 做真实 TLS 握手验证（SNI + 系统证书校验 + 主机名匹配）。</summary>
-    private static async Task<List<IPAddress>> TlsProbeAsync(List<IPAddress> reachable, string host, CancellationToken ct)
+    private static async Task<List<IPAddress>> TlsProbeAsync(List<IPAddress> reachable, string host, string tier, CancellationToken ct)
     {
         // 均匀采样，限制验证数量
         var candidates = reachable;
@@ -336,7 +336,24 @@ public sealed class GitHubRangeScanner
                 {
                     TargetHost = host,
                 }, tlsCts.Token);
-                working.Add(ip);
+
+                // TLS 过了还不够（如 Fastly 对未知域也会完成握手但 HTTP 层报错）：
+                // 发一个真实 HTTP 请求，确认服务端真正路由了这个域名
+                using var writer = new StreamWriter(ssl, leaveOpen: true) { AutoFlush = true };
+                using var reader = new StreamReader(ssl, System.Text.Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
+                using var httpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                httpCts.CancelAfter(3000);
+                await writer.WriteAsync($"GET / HTTP/1.0\r\nHost: {host}\r\nUser-Agent: FlashGithub\r\n\r\n");
+                var head = await reader.ReadToEndAsync(httpCts.Token);
+
+                var ok = head.Contains("HTTP/1.") && !head.Contains("Fastly error");
+                if (ok && tier == "api")
+                {
+                    // api 层更严格：必须是 GitHub API 的 JSON 根响应
+                    ok = head.Contains("current_user_url");
+                }
+                if (ok) working.Add(ip);
             }
             catch { }
             finally { sem.Release(); }
